@@ -1,0 +1,91 @@
+
+	
+	struct{
+		long type;
+		char* doc[BUFSIZE];
+		int docCount; //보내는 파싱한 단어 갯수
+	}msg;
+
+	struct{
+		long type;
+		int searchedCount[patternCount];
+	}result;
+ 
+
+	int pCount = processCount;
+
+	for(i = 0; i < pCount; pCount--) {
+		if((pid[i] = fork()) == 0) {
+			printf("자식생성\n");
+			/*if(mqId = msgget("444", IPC_CREAT | 0666) == -1)
+					printf("msgget 실패\n");
+			printf("자식 mqId: %d\n", mqId);*/
+			if(msgrcv(mqId, &msg, sizeof(msg), pCount, 0) == -1)
+				printf("msgrcv 실패\n");
+			printf("id: %d\n", pCount);
+			int i, j;
+			int wordCount = 0; //패턴들 갯수 
+			for(i = 0; i < msg.docCount; i++)
+				printf("%d, 내용: %s\n", pCount, msg.doc[i]);
+
+			for(i = 0; i < patternCount; i++) {
+				for(j = 0; j < msg.docCount; j++) {
+					char *temp = msg.doc[j];
+					while(strlen(temp) >= strlen(pattern[i])) {
+						if(!strncmp(temp, pattern[i], strlen(pattern[i]))) {
+							wordCount++;
+						}
+						temp = ++temp;
+					}
+				}
+				result.searchedCount[i] = wordCount;
+				//printf("하 %d\n", wordCount);
+				wordCount = 0;
+			}
+			result.type = getpid();
+			if(msgsnd(mqId, &result, sizeof(result), 0) == -1)
+				printf("msgsnd 실패\n");
+			for(i = 0; i < patternCount; i++)
+				printf("%s: %d\n", pattern[i], result.searchedCount[i]);
+			exit(1);
+		}
+		else {
+			printf("부모 mqId: %d\n", mqId);
+			memset(msg.doc, 0, sizeof(msg.doc)); //구조체로 보낼 메세지 초기화
+			msg.docCount = 0;
+			int i;
+			int j = 0;
+			for(i = pCount-1; i < wordCount; i+=processCount) { //여기서 분배함
+				msg.doc[msg.docCount] = allDoc[i];
+				msg.docCount++;
+			}
+			msg.type = pCount;
+			if(msgsnd(mqId, &msg, sizeof(msg), 0) == -1)
+				printf("msgsnd 실패\n");
+		}
+	}
+
+	for(i = 0; i < processCount; i++) { //생성된 모든자식 종료될때까지 대기
+		pid_t wpid = wait(&child_status);
+		if (WIFEXITED(child_status))
+	    	printf("Child %d terminated with exit status %d\n",
+		   	wpid, WEXITSTATUS(child_status));
+		else
+	    printf("Child %d terminated abnormally\n", wpid);
+	}
+
+	int finalCount[patternCount];
+	for(i = 0; i < patternCount; i++) //finalCount 0으로 초기화
+		finalCount[i] = 0;
+
+	for(i = 0; i < processCount; i++) {
+		if(msgrcv(mqId, &result, sizeof(result), 0, 0) == -1) {
+			printf("msgrcv 실패\n");
+		}else {
+			for(j = 0; j < patternCount; j++)
+				finalCount[j] += result.searchedCount[j];	
+		}
+	}
+	for(i = 0; i < patternCount; i++)
+		printf("%s:%d\n",pattern[i], finalCount[i]);
+}
